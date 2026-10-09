@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0c1f16">
+<title>경기 실시간 태깅</title>
+<style>
+  :root{
+    --pitch:#0e4d2b;
+    --pitch-line:#dff2e6;
+    --field:#0e4d2b;
+    --ink:#0c1f16;
+    --paper:#f3f6f2;
+    --card:#ffffff;
+    --accent:#ffc233;
+    --accent-ink:#3a2a00;
+    --home:#e2483d;
+    --away:#2e6fee;
+    --muted:#6d7a72;
+    --danger:#d63a2f;
+    --line:#d8e0da;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  [hidden]{display:none !important;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    user-select:none;-webkit-user-select:none;
+    overscroll-behavior-y:contain;
+  }
+  button{font-family:inherit;cursor:pointer;touch-action:manipulation;}
+  input,select{font-family:inherit;user-select:text;-webkit-user-select:text;}
+  button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px;}
+  .wrap{max-width:1180px;margin:0 auto;padding:14px 14px 96px;padding-top:max(14px,env(safe-area-inset-top));}
+  h1{font-size:20px;letter-spacing:-0.01em;margin:4px 0 2px;}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 16px;}
+  .hint{font-size:12px;color:var(--muted);margin:8px 0 0;line-height:1.55;}
+
+  /* ===== 종목 선택 ===== */
+  .sport-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+  .sport-card{
+    border:none;border-radius:var(--radius);color:#fff;text-align:left;
+    padding:16px;min-height:150px;display:flex;flex-direction:column;justify-content:space-between;gap:18px;
+  }
+  .sport-card:active{transform:scale(.98);}
+  .sport-card .em{font-size:36px;line-height:1;}
+  .sport-card b{font-size:19px;display:block;margin-bottom:4px;}
+  .sport-card small{font-size:12px;color:rgba(255,255,255,.72);line-height:1.45;display:block;}
+  .resume{
+    background:var(--card);border:2px solid var(--accent);border-radius:var(--radius);
+    padding:14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;justify-content:space-between;
+  }
+  .resume b{font-size:15px;}
+  .resume small{display:block;color:var(--muted);font-size:12px;margin-top:3px;}
+  .btn-accent{border:none;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:800;background:var(--accent);color:var(--accent-ink);white-space:nowrap;}
+
+  /* ===== 상단 바 ===== */
+  .topbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .topbar h1{flex:1;margin:0;font-size:18px;}
+  .ghost{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:700;}
+  .ghost.sm{padding:6px 10px;font-size:12px;}
+
+  /* ===== 레이아웃: 노트북 2단 / 모바일 1단 ===== */
+  .layout{display:grid;grid-template-columns:400px 1fr;gap:16px;align-items:start;}
+  .log-col{position:sticky;top:14px;}
+  .log-col .card{max-height:calc(100vh - 28px);display:flex;flex-direction:column;margin-bottom:0;}
+  .log-col .table-scroll{overflow-y:auto;flex:1;}
+  .log-col thead th{position:sticky;top:0;background:var(--card);z-index:1;}
+  @media (max-width:860px){
+    .layout{grid-template-columns:1fr;}
+    .log-col{position:static;order:2;}
+    .log-col .card{max-height:none;}
+    .log-col .table-scroll{overflow-y:visible;}
+    .ctrl-col{order:1;}
+  }
+
+  .card{background:var(--card);border-radius:var(--radius);padding:14px;margin-bottom:14px;border:1px solid var(--line);}
+  .card h2{font-size:12px;margin:0 0 10px;color:var(--muted);font-weight:600;}
+
+  /* ===== 점수판 ===== */
+  .board{background:var(--ink);border-radius:var(--radius);padding:12px;margin-bottom:12px;transition:box-shadow .15s ease;}
+  .board.flash-ok{box-shadow:0 0 0 4px var(--accent) inset;}
+  .board.flash-err{box-shadow:0 0 0 4px var(--danger) inset;}
+  .board-main{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:stretch;}
+  .tm{
+    border:2px solid transparent;border-radius:12px;background:rgba(255,255,255,.07);color:#fff;
+    padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:96px;min-width:0;
+  }
+  .tm.home{border-color:rgba(226,72,61,.5);}
+  .tm.away{border-color:rgba(46,111,238,.5);}
+  .tm.home.sel{background:var(--home);border-color:#fff;}
+  .tm.away.sel{background:var(--away);border-color:#fff;}
+  .tm-name{font-size:13px;font-weight:700;opacity:.9;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tm-score{font-size:40px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1;}
+  .tm-sub{font-size:11px;opacity:.78;min-height:14px;font-weight:600;}
+  .mid{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--paper);min-width:98px;text-align:center;}
+  .clock{font-variant-numeric:tabular-nums;font-size:34px;font-weight:800;line-height:1;}
+  .clock.txt{font-size:26px;}
+  .status{font-size:12px;color:rgba(255,255,255,.68);margin-top:7px;}
+  .outs{display:inline-flex;gap:5px;margin-left:6px;vertical-align:middle;}
+  .outs i{width:9px;height:9px;border-radius:50%;border:1.5px solid rgba(255,255,255,.65);display:block;}
+  .outs i.on{background:var(--accent);border-color:var(--accent);}
+  .board-row{display:flex;gap:8px;align-items:center;margin-top:10px;}
+  .periods{display:flex;background:rgba(255,255,255,.08);border-radius:10px;padding:3px;gap:3px;flex:1;min-width:0;overflow-x:auto;}
+  .periods button{flex:1;border:none;background:transparent;color:rgba(255,255,255,.6);font-size:13px;font-weight:700;padding:8px 10px;border-radius:7px;white-space:nowrap;min-height:36px;}
+  .periods button.active{background:var(--accent);color:var(--accent-ink);}
+  .tbtns{display:flex;gap:8px;}
+  .tbtns button{border:none;border-radius:10px;padding:10px 14px;font-size:14px;font-weight:700;color:#fff;min-height:42px;}
+  #startBtn{background:#3fae62;}
+  #stopBtn{background:#3a463e;}
+  .tbtns button:disabled{opacity:.35;cursor:not-allowed;}
+
+  /* ===== 키보드 HUD (노트북) ===== */
+  .hud{background:var(--ink);border-radius:var(--radius);padding:14px;margin-bottom:12px;}
+  .hud-steps{display:flex;gap:8px;margin-bottom:10px;}
+  .hud-step{flex:1;background:rgba(255,255,255,.06);border-radius:9px;padding:9px 10px;text-align:center;min-width:0;}
+  .hud-step .k{font-size:10px;color:rgba(255,255,255,.45);font-weight:600;margin-bottom:3px;}
+  .hud-step .v{font-size:15px;font-weight:700;color:rgba(255,255,255,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .hud-step.filled .v{color:var(--accent);}
+  .hud-step.filled.home .v{color:#ff8a7f;}
+  .hud-step.filled.away .v{color:#7fa8ff;}
+  .hud-legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:rgba(255,255,255,.78);}
+  .hud-legend b{color:var(--accent);font-weight:700;}
+  @media (max-width:860px){.hud{display:none;}}
+
+  /* ===== 배너 (파울 후속 / 세트 종료) ===== */
+  .followup{background:var(--danger);border-radius:12px;padding:10px 12px;margin-bottom:12px;animation:pulse-bg 1s ease-in-out infinite;color:#fff;}
+  .fu-text{font-weight:700;font-size:14px;margin-bottom:8px;}
+  .fu-btns{display:flex;gap:8px;flex-wrap:wrap;}
+  .fu-btns button{border:none;border-radius:9px;padding:10px 14px;font-size:14px;font-weight:800;background:#fff;color:#8a2a21;min-height:42px;}
+  .fu-btns button.skip{background:rgba(255,255,255,.22);color:#fff;}
+  .fu-btns kbd{font-family:ui-monospace,Menlo,monospace;background:rgba(0,0,0,.12);border-radius:4px;padding:0 5px;margin-right:5px;}
+  @media (pointer:coarse){.fu-btns kbd{display:none;}}
+  @keyframes pulse-bg{0%,100%{background:var(--danger);}50%{background:#a82820;}}
+  .setbanner{background:#fff7de;border:2px solid var(--accent);border-radius:12px;padding:10px 12px;margin-bottom:12px;display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:14px;font-weight:700;}
+  .setbanner small{display:block;font-weight:500;color:var(--muted);margin-top:2px;}
+
+  /* ===== 이벤트 버튼 ===== */
+  .ev-card{border-top:4px solid var(--line);}
+  .ev-card.home{border-top-color:var(--home);}
+  .ev-card.away{border-top-color:var(--away);}
+  .ev-group + .ev-group{margin-top:14px;}
+  .ev-group-title{font-size:12px;color:var(--muted);font-weight:700;margin:0 0 6px;}
+  .ev-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  @media (min-width:861px){.ev-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));}}
+  .ev{
+    position:relative;border:1px solid var(--line);background:var(--paper);border-radius:12px;min-height:64px;padding:8px 6px;
+    font-size:15px;font-weight:800;color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  }
+  .ev:active{transform:scale(.97);}
+  .ev.tone-score{background:var(--accent);border-color:#e0a920;color:var(--accent-ink);}
+  .ev.tone-bad{background:#fbeeea;border-color:#f0cfc8;color:#8a2a21;}
+  .ev.pending{outline:3px solid var(--ink);outline-offset:1px;}
+  .ev.off{opacity:.35;}
+  .ev .k{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:700;background:var(--ink);color:#fff;border-radius:5px;padding:1px 6px;}
+  .ev .pin{position:absolute;top:7px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--ink);opacity:.4;}
+  @media (pointer:coarse){.ev .k{display:none;}}
+  .legend-note{font-size:12px;color:var(--muted);margin:12px 0 0;display:flex;align-items:center;gap:6px;}
+  .legend-note i{width:7px;height:7px;border-radius:50%;background:var(--ink);opacity:.4;display:inline-block;}
+
+  /* ===== 위치 지도 ===== */
+  .zone-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;min-height:30px;}
+  .zone-title{font-size:14px;font-weight:800;}
+  .zone-card.awaiting,.zone-card.zfirst{border-color:var(--accent);box-shadow:0 0 0 3px rgba(255,194,51,.4);}
+  svg.map{width:100%;height:auto;display:block;border-radius:10px;overflow:hidden;touch-action:manipulation;}
+  svg.map.portrait{max-width:470px;margin:0 auto;}
+  .zone{fill:var(--field);stroke:rgba(223,242,230,.75);stroke-width:1.4;stroke-dasharray:7 5;cursor:pointer;}
+  .zone.selected{fill:var(--accent);}
+  .zone.off{opacity:.3;pointer-events:none;}
+  .zone.out{fill:#000;fill-opacity:.38;}
+  .zone.out.selected{fill:var(--accent);fill-opacity:1;}
+  .zlab,.zsub{fill:rgba(255,255,255,.8);pointer-events:none;text-anchor:middle;}
+  .zlab{font-weight:800;}
+  .zsub{font-weight:600;}
+  .zlab.selected,.zsub.selected{fill:var(--accent-ink);}
+  @media (hover:hover){.zone:not(.off):hover{filter:brightness(1.35);}}
+  #zoneBackdrop{display:none;position:fixed;inset:0;background:rgba(12,31,22,.55);z-index:80;}
+  @media (max-width:860px){
+    #zoneCard{display:none;margin:0;}
+    #zoneCard.awaiting{
+      display:block;position:fixed;left:0;right:0;bottom:0;z-index:90;border:none;
+      border-radius:18px 18px 0 0;max-height:90vh;overflow:auto;
+      padding:14px 14px calc(16px + env(safe-area-inset-bottom));
+      box-shadow:0 -8px 30px rgba(0,0,0,.3);
+    }
+    #zoneBackdrop.show{display:block;}
+    svg.map{max-height:62vh;}
+  }
+
+  /* ===== 로그 ===== */
+  .table-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;}
+  .table-header h2{margin:0;}
+  .table-actions{display:flex;gap:6px;flex-wrap:wrap;}
+  .table-actions button{border:none;border-radius:8px;padding:8px 11px;font-size:12px;font-weight:700;}
+  #undoBtn{background:var(--accent);color:var(--accent-ink);}
+  #csvBtn,#jsonBtn{background:var(--ink);color:#fff;}
+  #resetBtn{background:#fff;color:var(--danger);border:1px solid var(--danger);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;font-size:11px;color:var(--muted);font-weight:600;padding:6px 4px;border-bottom:1px solid var(--line);}
+  td{padding:8px 4px;border-bottom:1px solid var(--line);}
+  tr.log-row{cursor:pointer;}
+  tr.log-row:active{background:#fbeee9;}
+  .team-tag{display:inline-block;max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;padding:2px 7px;border-radius:6px;font-size:11px;font-weight:700;color:#fff;}
+  .team-tag.home{background:var(--home);}
+  .team-tag.away{background:var(--away);}
+  .empty-row td{text-align:center;color:var(--muted);padding:22px 0;}
+
+  /* ===== 사용 안내 ===== */
+  details.guide summary{font-size:14px;font-weight:800;cursor:pointer;list-style:none;}
+  details.guide summary::-webkit-details-marker{display:none;}
+  details.guide summary::after{content:"펼치기";float:right;font-size:12px;color:var(--muted);font-weight:600;}
+  details.guide[open] summary::after{content:"접기";}
+  .guide-body{font-size:13px;line-height:1.65;margin-top:10px;}
+  .guide-body h3{font-size:13px;margin:12px 0 4px;}
+  .guide-body ol,.guide-body ul{margin:0;padding-left:20px;}
+  .guide-body kbd{font-family:ui-monospace,Menlo,monospace;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px;}
+
+  /* ===== 하단 도크 (모바일) ===== */
+  .dock{display:none;}
+  @media (max-width:860px){
+    .dock{
+      display:flex;position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--ink);color:#fff;
+      padding:10px 12px calc(10px + env(safe-area-inset-bottom));gap:10px;align-items:center;
+    }
+    .dock-last{flex:1;min-width:0;font-size:13px;line-height:1.35;}
+    .dock-last b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .dock-last span{color:rgba(255,255,255,.6);font-size:12px;}
+    .dock button{border:none;border-radius:10px;padding:12px 14px;font-weight:800;font-size:14px;min-height:46px;background:var(--accent);color:var(--accent-ink);}
+    .dock button.light{background:rgba(255,255,255,.14);color:#fff;}
+    .dock button:disabled{opacity:.35;}
+  }
+
+  /* ===== 모달 / 토스트 ===== */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(12,31,22,.55);align-items:center;justify-content:center;z-index:200;padding:16px;}
+  .modal-overlay.show{display:flex;}
+  .modal-box{background:var(--card);border-radius:var(--radius);padding:18px;max-width:400px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 10px 40px rgba(0,0,0,.25);}
+  .modal-title{font-size:16px;font-weight:800;margin:0 0 10px;}
+  .modal-message{font-size:14px;line-height:1.55;margin:0 0 14px;white-space:pre-line;}
+  .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+  .modal-actions button{border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:700;min-height:40px;}
+  .m-cancel{background:var(--paper);color:var(--muted);}
+  .m-ok{background:var(--ink);color:#fff;}
+  .m-danger{background:var(--danger);color:#fff;}
+  .m-left{margin-right:auto;background:#fff !important;color:var(--danger) !important;border:1px solid var(--danger) !important;}
+  .field{margin-bottom:12px;}
+  .field label.l{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:5px;}
+  .field input[type=text],.field select{width:100%;font-size:15px;padding:10px 12px;border:2px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);}
+  .field input[type=text]:focus,.field select:focus{outline:none;border-color:var(--accent);}
+  .seg{display:flex;gap:6px;}
+  .seg button{flex:1;border:2px solid var(--line);background:#fff;border-radius:9px;padding:10px 6px;font-size:14px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .seg button.on.home{background:var(--home);border-color:var(--home);color:#fff;}
+  .seg button.on.away{background:var(--away);border-color:var(--away);color:#fff;}
+  .sw{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid var(--line);font-size:14px;}
+  .sw small{display:block;color:var(--muted);font-size:12px;margin-top:2px;}
+  .sw input{width:22px;height:22px;accent-color:var(--ink);flex:none;}
+  #toast{
+    position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translate(-50%,-80px);z-index:300;
+    background:var(--ink);color:#fff;padding:11px 16px;border-radius:12px;font-size:14px;font-weight:700;
+    max-width:92vw;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.3);transition:transform .18s ease;pointer-events:none;
+  }
+  #toast.show{transform:translate(-50%,0);}
+  #toast.err{background:var(--danger);}
+  #toast.ok b{color:var(--accent);}
+  @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important;}}
+</style>
+</head>
+<body>
+
+<!-- ===== 종목 선택 ===== -->
+<section id="picker" class="screen">
+  <div class="wrap">
+    <h1>경기 실시간 태깅</h1>
+    <p class="sub">종목을 선택해 새 경기를 시작하세요. 기록은 이 기기에 자동 저장됩니다.</p>
+    <div id="resumeBox"></div>
+    <div class="sport-grid" id="sportGrid"></div>
+    <p class="hint">인터넷 없이도 동작합니다. 경기가 끝나면 CSV 또는 JSON으로 저장해 두세요. 브라우저 저장 공간이 정리되면 기록이 사라질 수 있습니다.</p>
+  </div>
+</section>
+
+<!-- ===== 태깅 화면 ===== -->
+<section id="tagger" class="screen" hidden>
+  <div class="wrap">
+    <div class="topbar">
+      <button class="ghost" id="backBtn">‹ 종목</button>
+      <h1 id="sportTitle"></h1>
+      <button class="ghost" id="settingsBtn">설정</button>
+    </div>
+
+    <div class="layout">
+      <!-- 왼쪽: 이벤트 로그 -->
+      <div class="log-col">
+        <div class="card" id="logCard">
+          <div class="table-header">
+            <h2>기록된 이벤트 (<span id="logCount">0</span>)</h2>
+            <div class="table-actions">
+              <button id="undoBtn">↩ 취소</button>
+              <button id="csvBtn">CSV</button>
+              <button id="jsonBtn">JSON</button>
+              <button id="resetBtn">초기화</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>#</th><th>팀</th><th>이벤트</th><th>위치</th><th>구간</th><th>시간</th></tr></thead>
+              <tbody id="logBody"></tbody>
+            </table>
+          </div>
+          <p class="hint">행을 누르면 수정·삭제할 수 있습니다.</p>
+        </div>
+      </div>
+
+      <!-- 오른쪽: 태깅 컨트롤 -->
+      <div class="ctrl-col">
+        <div class="board" id="board">
+          <div class="board-main">
+            <button class="tm home" data-team="home"><span class="tm-name"></span><span class="tm-score">0</span><span class="tm-sub"></span></button>
+            <div class="mid"><div class="clock" id="clock">00:00</div><div class="status" id="status"></div></div>
+            <button class="tm away" data-team="away"><span class="tm-name"></span><span class="tm-score">0</span><span class="tm-sub"></span></button>
+          </div>
+          <div class="board-row">
+            <div class="periods" id="periods"></div>
+            <div class="tbtns" id="tbtns">
+              <button id="startBtn">▶ 시작</button>
+              <button id="stopBtn" disabled>■ 정지</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="followup" id="followup" hidden>
+          <div class="fu-text" id="fuText"></div>
+          <div class="fu-btns" id="fuBtns"></div>
+        </div>
+        <div class="setbanner" id="setBanner" hidden></div>
+
+        <div class="hud" id="hud">
+          <div class="hud-steps">
+            <div class="hud-step" id="hudTeam"><div class="k">← / → 팀</div><div class="v" id="hudTeamV">-</div></div>
+            <div class="hud-step" id="hudEvent"><div class="k">이벤트 키</div><div class="v" id="hudEventV">-</div></div>
+            <div class="hud-step" id="hudZone"><div class="k">위치 숫자키</div><div class="v" id="hudZoneV">-</div></div>
+          </div>
+          <div class="hud-legend" id="hudLegend"></div>
+        </div>
+
+        <div class="card ev-card" id="evCard">
+          <div id="evBox"></div>
+          <p class="legend-note"><i></i>점이 있는 버튼은 위치도 함께 선택합니다.</p>
+        </div>
+
+        <div class="card zone-card" id="zoneCard">
+          <div class="zone-head">
+            <div class="zone-title" id="zoneTitle">위치 지도</div>
+            <button class="ghost sm" id="zoneCancel" hidden>취소</button>
+          </div>
+          <svg class="map" id="mapSvg" role="img" aria-label="위치 선택 지도"></svg>
+          <p class="hint" id="mapHint"></p>
+        </div>
+
+        <details class="card guide" id="guide">
+          <summary>사용 안내</summary>
+          <div class="guide-body" id="guideBody"></div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <!-- 모바일 하단 도크 -->
+  <div class="dock" id="dock">
+    <div class="dock-last" id="dockLast"></div>
+    <button class="light" id="dockLog">로그</button>
+    <button id="dockUndo">↩ 취소</button>
+  </div>
+</section>
+
+<div id="zoneBackdrop"></div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal-box">
+    <h3 class="modal-title" id="mTitle"></h3>
+    <p class="modal-message" id="mMsg"></p>
+    <div id="mBody"></div>
+    <div class="modal-actions" id="mActions"></div>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* =====================================================================
+   유틸
+   ===================================================================== */
+const $ = (s, r=document) => r.querySelector(s);
+const f2 = n => Math.round(n*100)/100;
+const rad = d => d*Math.PI/180;
+const pad = n => String(n).padStart(2,'0');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = sec => (sec==null ? '-' : pad(Math.floor(sec/60))+':'+pad(sec%60));
+function stamp(){
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+const rectPath = (x,y,w,h) => `M${x} ${y}H${x+w}V${y+h}H${x}Z`;
+
+/* =====================================================================
+   위치 지도 (종목별)  — zone: {id,key,label,d,cx,cy,fs,[clip],[eo],[nosub]}
+   ===================================================================== */
+function soccerMap(){
+  const names = ['좌상','중상','우상','좌중','중앙','우중','좌하','중하','우하'];
+  const xs = [0,300,600], rows = [[0,133],[133,134],[267,133]];
+  const zones = [];
+  rows.forEach(([y,h],r)=>xs.forEach((x,c)=>{
+    const id = r*3+c+1;
+    zones.push({id, key:String(id), label:names[id-1], d:rectPath(x,y,300,h), cx:[223,450,677][c], cy:y+h/2, fs:48});
+  }));
+  const L = 'rgba(255,255,255,.9)';
+  const art = `<g stroke="${L}" stroke-width="2.5" fill="none">
+    <rect x="6" y="6" width="888" height="388"/><line x1="450" y1="6" x2="450" y2="394"/><circle cx="450" cy="200" r="52"/>
+    <rect x="6" y="85" width="140" height="230"/><rect x="754" y="85" width="140" height="230"/>
+    <rect x="6" y="150" width="47" height="100"/><rect x="847" y="150" width="47" height="100"/>
+    <path d="M146 175.8A52 52 0 0 1 146 224.2"/><path d="M754 224.2A52 52 0 0 1 754 175.8"/>
+    <rect x="-8" y="170" width="14" height="60"/><rect x="894" y="170" width="14" height="60"/></g>
+    <circle cx="450" cy="200" r="3" fill="${L}"/><circle cx="100" cy="200" r="3" fill="${L}"/><circle cx="800" cy="200" r="3" fill="${L}"/>`;
+  return {viewBox:'-16 -16 932 432', bg:'<rect x="-16" y="-16" width="932" height="432" fill="var(--field)"/>', defs:'', zones, art, portrait:false};
+}
+
+function baseballMap(){
+  const hx=350, hy=500;
+  const P = (r,a) => [hx + r*Math.sin(rad(a)), hy - r*Math.cos(rad(a))];
+  const pt = p => f2(p[0])+' '+f2(p[1]);
+  const pc = p => f2(p[0])+','+f2(p[1]);
+  const sector = (r1,r2,a1,a2) => r1===0
+    ? `M${hx} ${hy}L${pt(P(r2,a1))}A${r2} ${r2} 0 0 1 ${pt(P(r2,a2))}Z`
+    : `M${pt(P(r1,a1))}L${pt(P(r2,a1))}A${r2} ${r2} 0 0 1 ${pt(P(r2,a2))}L${pt(P(r1,a2))}A${r1} ${r1} 0 0 0 ${pt(P(r1,a1))}Z`;
+  const defs = [
+    [1,'내야 좌',0,200,-45,-15,150,-30,36],
+    [2,'내야 중',0,200,-15,15,135,0,36],
+    [3,'내야 우',0,200,15,45,150,30,36],
+    [4,'외야 좌',200,430,-45,-15,320,-30,36],
+    [5,'외야 중',200,430,-15,15,320,0,36],
+    [6,'외야 우',200,430,15,45,320,30,36],
+    [7,'좌 파울',0,330,-90,-45,235,-67,28],
+    [8,'우 파울',0,330,45,90,235,67,28]
+  ];
+  const zones = defs.map(([id,label,r1,r2,a1,a2,lr,la,fs])=>{
+    const c = P(lr,la);
+    return {id, key:String(id), label, d:sector(r1,r2,a1,a2), cx:c[0], cy:c[1], fs};
+  });
+  const b1=P(125,45), b2=P(176.8,0), b3=P(125,-45), mound=P(88,0);
+  const base = p => `<rect x="${f2(p[0]-7)}" y="${f2(p[1]-7)}" width="14" height="14" transform="rotate(45 ${f2(p[0])} ${f2(p[1])})" fill="#fff"/>`;
+  const art = `
+    <polygon points="${hx},${hy} ${pc(b1)} ${pc(b2)} ${pc(b3)}" fill="rgba(196,154,108,.38)" stroke="#fff" stroke-width="2.5"/>
+    <path d="M${hx} ${hy}L${pt(P(430,-45))}M${hx} ${hy}L${pt(P(430,45))}" stroke="#fff" stroke-width="3" fill="none"/>
+    <path d="M${pt(P(430,-45))}A430 430 0 0 1 ${pt(P(430,45))}" stroke="#fff" stroke-width="5" fill="none"/>
+    <circle cx="${f2(mound[0])}" cy="${f2(mound[1])}" r="9" fill="#d8b98a"/>
+    ${base(b1)}${base(b2)}${base(b3)}
+    <path d="M${hx-9} ${hy-4}h18v8l-9 8l-9-8z" fill="#fff"/>`;
+  return {viewBox:'0 0 700 540', bg:'<rect width="700" height="540" fill="#0a2f19"/>', defs:'', zones, art, portrait:true};
+}
+
+function basketballMap(){
+  const bx=250, by=403, T=3000;
+  const ray = a => [bx + T*Math.sin(rad(a)), by - T*Math.cos(rad(a))];
+  const wedge = (a1,a2) => {
+    const pts = [[bx,by]];
+    for(let a=a1; a<a2; a+=15) pts.push(ray(a));
+    pts.push(ray(a2));
+    return pts.map(p=>f2(p[0])+','+f2(p[1])).join(' ');
+  };
+  const wedges = {cpLC:[-180,-80], cpLW:[-80,-30], cpC:[-30,30], cpRW:[30,80], cpRC:[80,180], cpLM:[-180,-30], cpRM:[30,180]};
+  const defs = '<defs>' + Object.entries(wedges).map(([id,[a,b]])=>`<clipPath id="${id}"><polygon points="${wedge(a,b)}"/></clipPath>`).join('') + '</defs>';
+  const PIN='M52 450V363A202 202 0 0 1 448 363V450Z';
+  const PAINT='M176 276H324V450H176Z';
+  const COURT='M25 30H475V450H25Z';
+  const BOX='M190 340H310V450H190Z';
+  const zones = [
+    {id:1, key:'1', label:'골밑',      d:BOX,         cx:250, cy:431, fs:20},
+    {id:2, key:'2', label:'페인트존',  d:PAINT+BOX,   eo:true, cx:250, cy:306, fs:24},
+    {id:3, key:'3', label:'미드 좌',   d:PIN+PAINT,   eo:true, clip:'cpLM', cx:113, cy:385, fs:26},
+    {id:4, key:'4', label:'미드 중앙', d:PIN+PAINT,   eo:true, clip:'cpC',  cx:250, cy:238, fs:26},
+    {id:5, key:'5', label:'미드 우',   d:PIN+PAINT,   eo:true, clip:'cpRM', cx:387, cy:385, fs:26},
+    {id:6, key:'6', label:'3점 좌코너', d:COURT+PIN,  eo:true, clip:'cpLC', cx:39,  cy:410, fs:17, nosub:true},
+    {id:7, key:'7', label:'3점 좌윙',  d:COURT+PIN,   eo:true, clip:'cpLW', cx:68,  cy:262, fs:24},
+    {id:8, key:'8', label:'3점 탑',    d:COURT+PIN,   eo:true, clip:'cpC',  cx:250, cy:118, fs:26},
+    {id:9, key:'9', label:'3점 우윙',  d:COURT+PIN,   eo:true, clip:'cpRW', cx:432, cy:262, fs:24},
+    {id:10,key:'0', label:'3점 우코너', d:COURT+PIN,  eo:true, clip:'cpRC', cx:461, cy:410, fs:17, nosub:true}
+  ];
+  const L='rgba(255,255,255,.92)';
+  const art = `<g stroke="${L}" stroke-width="2.5" fill="none">
+    <rect x="25" y="30" width="450" height="420"/>
+    <rect x="176" y="276" width="148" height="174"/>
+    <path d="${PIN.replace('Z','')}"/></g>
+    <g stroke="${L}" stroke-width="2" fill="none" stroke-opacity=".42">
+    <path d="M196 30A54 54 0 0 0 304 30"/>
+    <path d="M196 276A54 54 0 0 1 304 276"/>
+    <path d="M304 276A54 54 0 0 1 196 276" stroke-dasharray="6 6"/>
+    <path d="M212.5 403A37.5 37.5 0 0 1 287.5 403"/>
+    <line x1="223" y1="414" x2="277" y2="414"/>
+    <circle cx="250" cy="403" r="7"/></g>`;
+  return {viewBox:'0 0 500 480', bg:'<rect width="500" height="480" fill="#4a2c12"/><rect x="25" y="30" width="450" height="420" fill="var(--field)"/>', defs, zones, art, portrait:true, hasOuterBg:true};
+}
+
+function volleyMap(){
+  // 공격하는 팀의 시점: 네트가 아래쪽, 위쪽이 상대 엔드라인. 화면의 좌·우 = 공격팀의 좌·우.
+  const OUT='M10 20H390V360H10Z', COURT='M50 60H350V360H50Z';
+  const spec = [[1,'전위 좌',50,260],[2,'전위 중',150,260],[3,'전위 우',250,260],
+                [4,'후위 좌',50,60],[5,'후위 중',150,60],[6,'후위 우',250,60]];
+  const zones = spec.map(([id,label,x,y])=>{
+    const h = y===260 ? 100 : 200;
+    return {id, key:String(id), label, d:rectPath(x,y,100,h), cx:x+50, cy:y+h/2, fs:32};
+  });
+  zones.push({id:7, key:'7', label:'아웃', d:OUT+COURT, eo:true, out:true, cx:200, cy:40,  fs:20});
+  zones.push({id:8, key:'8', label:'네트', d:rectPath(10,360,380,50), out:true, cx:200, cy:386, fs:20});
+  const art = `<g stroke="rgba(255,255,255,.92)" stroke-width="3" fill="none"><rect x="50" y="60" width="300" height="300"/><line x1="50" y1="260" x2="350" y2="260"/></g>
+    <rect x="44" y="355" width="312" height="10" rx="2" fill="#fff"/>`;
+  return {viewBox:'0 0 400 430', bg:'<rect width="400" height="430" fill="#0f3a4c"/><rect x="50" y="60" width="300" height="300" fill="var(--field)"/>', defs:'', zones, art, portrait:true};
+}
+
+/* =====================================================================
+   종목 템플릿  — 이 데이터만 고치면 종목·이벤트·키 배정이 바뀝니다.
+   event: {id,label,keys,loc,group,tone,score:{to:'self'|'opp',pts},out:'auto'|'always',allow:[zoneId],hidden,followup}
+   ===================================================================== */
+const SPORTS = {
+  soccer:{
+    id:'soccer', name:'축구', emoji:'⚽', desc:'전·후반 타이머 · 9구역', field:'#0e4d2b',
+    timer:true, periods:['전반','후반'], mapFn:soccerMap,
+    mapHint:'경기장 전체 기준입니다. 위치는 화면의 좌·우로 고정되며, 진영 교체는 구간(전·후반)으로 구분됩니다.',
+    events:[
+      {id:'shot',  label:'슈팅',     keys:'d',   loc:true},
+      {id:'sot',   label:'유효슈팅', keys:'dd',  loc:true},
+      {id:'goal',  label:'득점',     keys:'ddd', loc:true, tone:'score', score:{to:'self',pts:1}},
+      {id:'def',   label:'수비 성공', keys:'a',   loc:true},
+      {id:'foul',  label:'파울',     keys:'f',   loc:true, tone:'bad', followup:[{key:'1',id:'fk',label:'프리킥'},{key:'2',id:'pk',label:'페널티킥'}]},
+      {id:'corner',label:'코너킥',   keys:'c',   loc:true},
+      {id:'fk',    label:'프리킥',   loc:true, hidden:true},
+      {id:'pk',    label:'페널티킥', loc:true, hidden:true}
+    ]
+  },
+  baseball:{
+    id:'baseball', name:'야구', emoji:'⚾', desc:'이닝 초·말 · 아웃 · 타구 방향 8구역', field:'#2f5d1f',
+    innings:true, autoTeam:true, mapFn:baseballMap,
+    mapHint:'홈플레이트에서 본 타구 방향입니다. 파울 구역은 파울 라인 바깥입니다.',
+    events:[
+      {id:'single', label:'안타',  keys:'h',    loc:true, group:'타격 결과'},
+      {id:'double', label:'2루타', keys:'hh',   loc:true, group:'타격 결과'},
+      {id:'triple', label:'3루타', keys:'hhh',  loc:true, group:'타격 결과'},
+      {id:'hr',     label:'홈런',  keys:'hhhh', loc:true, group:'타격 결과', tone:'score'},
+      {id:'ground', label:'땅볼',  keys:'g',    loc:true, group:'타격 결과', out:'auto'},
+      {id:'fly',    label:'뜬공',  keys:'f',    loc:true, group:'타격 결과', out:'auto'},
+      {id:'foulb',  label:'파울',  keys:'p',    loc:false,group:'타격 결과'},
+      {id:'k',      label:'삼진',  keys:'k',    loc:false,group:'그 외', tone:'bad', out:'auto'},
+      {id:'bb',     label:'볼넷',  keys:'w',    loc:false,group:'그 외'},
+      {id:'hbp',    label:'사구',  keys:'d',    loc:false,group:'그 외'},
+      {id:'sb',     label:'도루',  keys:'s',    loc:false,group:'그 외'},
+      {id:'run',    label:'득점',  keys:'r',    loc:false,group:'그 외', tone:'score', score:{to:'self',pts:1}},
+      {id:'out',    label:'아웃',  keys:'o',    loc:false,group:'그 외', tone:'bad', out:'always'}
+    ]
+  },
+  basketball:{
+    id:'basketball', name:'농구', emoji:'🏀', desc:'쿼터 타이머 · 코트 10구역', field:'#7b4b24',
+    timer:true, periods:['1Q','2Q','3Q','4Q','OT'], mapFn:basketballMap,
+    mapHint:'하프코트 기준입니다. 골대는 아래쪽이며, 숫자 0 키는 10번(3점 우코너)입니다.',
+    events:[
+      {id:'m2', label:'2점 성공',   keys:'d',  loc:true, allow:[1,2,3,4,5],    group:'슛', tone:'score', score:{to:'self',pts:2}},
+      {id:'x2', label:'2점 실패',   keys:'dd', loc:true, allow:[1,2,3,4,5],    group:'슛', tone:'bad'},
+      {id:'m3', label:'3점 성공',   keys:'t',  loc:true, allow:[6,7,8,9,10],   group:'슛', tone:'score', score:{to:'self',pts:3}},
+      {id:'x3', label:'3점 실패',   keys:'tt', loc:true, allow:[6,7,8,9,10],   group:'슛', tone:'bad'},
+      {id:'mft',label:'자유투 성공', keys:'f',  loc:false,group:'슛', tone:'score', score:{to:'self',pts:1}},
+      {id:'xft',label:'자유투 실패', keys:'ff', loc:false,group:'슛', tone:'bad'},
+      {id:'reb',label:'리바운드',   keys:'r',  loc:false,group:'그 외'},
+      {id:'ast',label:'어시스트',   keys:'a',  loc:false,group:'그 외'},
+      {id:'stl',label:'스틸',       keys:'s',  loc:true, group:'그 외'},
+      {id:'tov',label:'턴오버',     keys:'o',  loc:true, group:'그 외', tone:'bad'},
+      {id:'foul',label:'파울',      keys:'p',  loc:true, group:'그 외', tone:'bad'}
+    ]
+  },
+  volleyball:{
+    id:'volleyball', name:'배구', emoji:'🏐', desc:'세트 · 세트별 점수 · 코트 6구역', field:'#1d5a73',
+    periods:['1세트','2세트','3세트','4세트','5세트'], perPeriod:true, mapFn:volleyMap,
+    mapHint:'상대 코트의 낙구 위치입니다. 공격하는 팀의 시점이라 네트가 아래쪽이고, 화면의 좌·우가 공격팀의 좌·우입니다. 코트 밖은 7 아웃, 네트에 걸리면 8 네트입니다.',
+    events:[
+      {id:'ace',   label:'서브 득점',   keys:'a', loc:true,  allow:[1,2,3,4,5,6], tone:'score', score:{to:'self',pts:1}},
+      {id:'srv',   label:'서브 인플레이', keys:'s', loc:true,  allow:[1,2,3,4,5,6]},
+      {id:'serr',  label:'서브 실패',   keys:'e', loc:true,  allow:[7,8], tone:'bad', score:{to:'opp',pts:1}},
+      {id:'spike', label:'스파이크',    keys:'k', loc:true},
+      {id:'block', label:'블로킹',      keys:'b', loc:false},
+      {id:'pt',    label:'득점',       keys:'p', loc:false, tone:'score', score:{to:'self',pts:1}},
+      {id:'loss',  label:'실점',       keys:'l', loc:false, tone:'bad', score:{to:'opp',pts:1}}
+    ]
+  }
+};
+const MAPS = {};
+function getMap(id){ return MAPS[id] || (MAPS[id] = SPORTS[id].mapFn()); }
+
+/* =====================================================================
+   상태 (자동 저장 대상)
+   ===================================================================== */
+const KEY = 'multiSportTagger.v1';
+const DEFAULT_SETTINGS = {vibrate:true, wake:true, requireRunning:true, keepTeam:false, autoOut:true};
+let S = {
+  v:1, sport:null, inGame:false, home:'홈', away:'어웨이',
+  periodIdx:0, elapsed:0, running:false, startTime:0, elapsedBy:{},
+  log:[], settings:Object.assign({}, DEFAULT_SETTINGS)
+};
+// 화면 전용 상태 (저장하지 않음)
+let sel = {team:null, evId:null, buf:'', zone:null};
+let fu = null;            // 파울 후속 대기
+let tickId = null;
+let zoneTimer = null;
+const isMobile = () => !!(window.matchMedia && window.matchMedia('(max-width:860px)').matches);
+function scheduleZoneExpiry(){
+  clearTimeout(zoneTimer);
+  zoneTimer = setTimeout(()=>{ if(sel.zone && !sel.evId){ sel.zone=null; renderSel(); } }, 8000);
+}
+
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(!raw) return;
+    const o = JSON.parse(raw);
+    if(o && o.v===1){
+      S = Object.assign(S, o);
+      S.settings = Object.assign({}, DEFAULT_SETTINGS, o.settings||{});
+      if(S.sport && !SPORTS[S.sport]){ S.sport=null; S.inGame=false; }
+      if(!Array.isArray(S.log)) S.log=[];
+      S.log.forEach(e=>{ if(e.zone==null) e.zone=0; });
+    }
+  }catch(e){}
+}
+function newGame(id){
+  S.sport = id; S.home='홈'; S.away='어웨이';
+  S.periodIdx=0; S.elapsed=0; S.running=false; S.startTime=0; S.elapsedBy={}; S.log=[];
+}
+
+/* =====================================================================
+   도우미
+   ===================================================================== */
+const SP = () => SPORTS[S.sport];
+const evDef = id => SP().events.find(e=>e.id===id);
+const opp = t => t==='home' ? 'away' : 'home';
+const teamName = t => (t==='home' ? S.home : S.away) || (t==='home' ? '홈' : '어웨이');
+function periodLabel(idx){
+  const sp = SP();
+  if(sp.innings) return `${Math.floor(idx/2)+1}회${idx%2 ? '말' : '초'}`;
+  return sp.periods[idx] || `${idx+1}`;
+}
+const battingTeam = () => (S.periodIdx%2===0 ? 'away' : 'home');   // 초 = 어웨이 공격, 말 = 홈 공격
+const elapsedMs = () => S.running ? Date.now()-S.startTime : S.elapsed;
+const zoneObj = id => getMap(S.sport).zones.find(z=>z.id===id);
+const zoneByKey = k => getMap(S.sport).zones.find(z=>z.key===k);
+function zoneText(id){ if(!id) return '-'; const z=zoneObj(id); return z ? `${id} ${z.label}` : String(id); }
+
+function scoreOf(team, periodIdx){
+  const per = SP().perPeriod ? (periodIdx==null ? S.periodIdx : periodIdx) : null;
+  return S.log.reduce((a,e)=> a + ((e.scoreTo===team && (per==null || e.periodIdx===per)) ? e.pts : 0), 0);
+}
+function setEnded(idx){
+  const h=scoreOf('home',idx), a=scoreOf('away',idx), target = idx===4 ? 15 : 25;
+  return (Math.max(h,a)>=target && Math.abs(h-a)>=2) ? (h>a?'home':'away') : null;
+}
+function setsWon(team){ let n=0; for(let i=0;i<5;i++) if(setEnded(i)===team) n++; return n; }
+const outsIn = idx => S.log.reduce((a,e)=> a + (e.periodIdx===idx ? (e.outs||0) : 0), 0);
+
+function derive(en){
+  const def = evDef(en.eid);
+  en.event = def.label;
+  en.zoneName = en.zone ? ((zoneObj(en.zone)||{}).label || '') : '없음';
+  if(def.score){ en.scoreTo = def.score.to==='self' ? en.team : opp(en.team); en.pts = def.score.pts; }
+  else { en.scoreTo = null; en.pts = 0; }
+  en.outs = (def.out==='always' || (def.out==='auto' && S.settings.autoOut)) ? 1 : 0;
+}
+function renumber(){ S.log.forEach((e,i)=>{ e.no = i+1; }); }
+
+/* =====================================================================
+   피드백 (진동 · 깜빡임 · 토스트)
+   ===================================================================== */
+let toastT;
+function toast(html, type){
+  const el = $('#toast');
+  el.innerHTML = html; el.className = 'show ' + (type||'ok');
+  clearTimeout(toastT);
+  toastT = setTimeout(()=>{ el.className=''; }, 1800);
+}
+function flash(cls){
+  const b = $('#board'); b.classList.add(cls);
+  setTimeout(()=>b.classList.remove(cls), 280);
+}
+function buzz(ok){
+  if(!S.settings.vibrate || !navigator.vibrate) return;
+  try{ navigator.vibrate(ok ? 25 : [60,40,60]); }catch(e){}
+}
+function fail(msg){ flash('flash-err'); buzz(false); toast(esc(msg), 'err'); }
+function success(en, note){
+  flash('flash-ok'); buzz(true);
+  toast(`✓ <b>${esc(teamName(en.team))}</b> · ${esc(en.event)}${en.zone ? ' · '+en.zone : ''}${note ? `<br><small>${esc(note)}</small>` : ''}`, 'ok');
+}
+
+/* =====================================================================
+   화면 꺼짐 방지
+   ===================================================================== */
+let wakeLock = null;
+async function acquireWake(){
+  if(!S.settings.wake || !S.sport || !('wakeLock' in navigator) || wakeLock) return;
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', ()=>{ wakeLock=null; });
+  }catch(e){ wakeLock=null; }
+}
+function releaseWake(){ if(wakeLock){ wakeLock.release().catch(()=>{}); wakeLock=null; } }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && S.inGame) acquireWake(); });
+
+/* =====================================================================
+   모달
+   ===================================================================== */
+const modalEl = $('#modal');
+const isModalOpen = () => modalEl.classList.contains('show');
+function showModal({title='', message='', body=null, buttons=[]}){
+  $('#mTitle').textContent = title; $('#mTitle').hidden = !title;
+  $('#mMsg').textContent = message; $('#mMsg').hidden = !message;
+  const bodyEl = $('#mBody'); bodyEl.innerHTML=''; if(body) bodyEl.appendChild(body);
+  const act = $('#mActions'); act.innerHTML='';
+  const close = () => modalEl.classList.remove('show');
+  buttons.forEach(b=>{
+    const el = document.createElement('button');
+    el.textContent = b.text; el.className = b.cls || 'm-cancel';
+    el.addEventListener('click', ()=>{ if(b.onClick){ if(b.onClick(close)===false) return; } if(b.close!==false) close(); });
+    act.appendChild(el);
+  });
+  modalEl.classList.add('show');
+  return close;
+}
+function confirmModal(message, okText, danger){
+  return new Promise(res=>{
+    showModal({message, buttons:[
+      {text:'취소', cls:'m-cancel', onClick:()=>res(false)},
+      {text:okText||'확인', cls: danger ? 'm-danger' : 'm-ok', onClick:()=>res(true)}
+    ]});
+  });
+}
+
+/* =====================================================================
+   타이머
+   ===================================================================== */
+function startTimer(){
+  if(!SP().timer || S.running) return;
+  S.startTime = Date.now() - S.elapsed; S.running = true;
+  save(); renderBoard(); acquireWake();
+}
+function stopTimer(){
+  if(!S.running) return;
+  S.elapsed = Date.now() - S.startTime; S.running = false;
+  save(); renderBoard();
+}
+function updateClock(){
+  if(!S.inGame || !SP().timer) return;
+  $('#clock').textContent = fmt(Math.floor(elapsedMs()/1000));
+}
+function setPeriod(idx){
+  if(idx<0 || idx===S.periodIdx) return;
+  dismissFollowup();
+  if(SP().timer){
+    S.elapsedBy[S.periodIdx] = elapsedMs();
+    S.running = false;
+    S.elapsed = S.elapsedBy[idx] || 0;
+  }
+  S.periodIdx = idx;
+  resetSel(false); save(); renderAll();
+}
+
+/* =====================================================================
+   입력 상태 (팀 → 이벤트 → 위치 → 기록)
+   ===================================================================== */
+function resetSel(keepTeam){
+  let team = null;
+  if(SP().autoTeam) team = battingTeam();
+  else if(keepTeam && S.settings.keepTeam) team = sel.team;
+  clearTimeout(zoneTimer);
+  sel = {team, evId:null, buf:'', zone:null};
+  renderSel();
+}
+const canRecord = () => !SP().timer || S.running || !S.settings.requireRunning;
+const awaitingZone = () => { const d = sel.evId && evDef(sel.evId); return !!(d && d.loc); };
+
+function selectTeam(t){
+  dismissFollowup();
+  sel.team = t; sel.evId=null; sel.buf=''; sel.zone=null; renderSel();
+}
+function pickEvent(id){
+  dismissFollowup();
+  if(!sel.team) return fail('먼저 팀을 선택하세요');
+  if(!canRecord()) return fail('타이머를 먼저 시작하세요');
+  const def = evDef(id);
+  if(!def.loc){ sel.evId = id; commit(); return; }                 // 위치가 필요 없으면 바로 저장 (위치 0)
+  if(sel.zone){                                                      // 위치를 먼저 눌러 둔 경우
+    if(def.allow && !def.allow.includes(sel.zone)) return fail(`${def.label}은(는) ${zoneText(sel.zone)} 구역에서 기록할 수 없습니다`);
+    sel.evId = id; commit(); return;
+  }
+  sel.evId = id; renderSel();                                        // 이벤트 먼저 → 위치 선택 대기
+}
+function pickZone(zid){
+  if(awaitingZone()){
+    const def = evDef(sel.evId);
+    if(def.allow && !def.allow.includes(zid)) return fail(`${def.label}은(는) 선택할 수 없는 구역입니다`);
+    sel.zone = zid; commit(); return;
+  }
+  // 위치 먼저 (노트북 화면에서만; 모바일은 이벤트 → 위치 시트 방식)
+  if(isMobile()) return;
+  if(!sel.team) return fail('먼저 팀을 선택하세요');
+  const def = sel.evId && evDef(sel.evId);
+  if(def && !def.loc) return;
+  sel.zone = zid; scheduleZoneExpiry(); renderSel();
+}
+function commit(){
+  if(!canRecord()) return fail('타이머를 먼저 시작하세요');
+  if(!sel.team) return fail('먼저 팀을 선택하세요');
+  const def = sel.evId && evDef(sel.evId);
+  if(!def) return fail('이벤트를 선택하세요');
+  if(def.loc && !sel.zone) return fail('위치(구역)를 선택하세요');
+  if(def.loc && def.allow && !def.allow.includes(sel.zone)) return fail(`${def.label}은(는) ${zoneText(sel.zone)} 구역에서 기록할 수 없습니다`);
+  const discarded = !def.loc && !!sel.zone;
+  const team = sel.team, zone = def.loc ? sel.zone : 0;
+  const en = record(team, def, zone, discarded ? '이 이벤트는 위치를 기록하지 않아 0으로 저장했어요' : '');
+  resetSel(true);
+  if(def.followup) startFollowup(team, zone, def.followup);
+  return en;
+}
+
+function record(team, def, zone, note){
+  const sp = SP();
+  const en = {
+    no: S.log.length+1, team, eid:def.id, zone: zone||0,
+    periodIdx:S.periodIdx, period:periodLabel(S.periodIdx),
+    sec: sp.timer ? Math.floor(elapsedMs()/1000) : null,
+    at: stamp()
+  };
+  derive(en);
+  S.log.push(en);
+  if(sp.id==='baseball' && en.outs && outsIn(S.periodIdx)>=3){
+    en.advanced = true; S.periodIdx++;
+    toast('3아웃 · 공수교대', 'ok');
+  }
+  save(); renderAll(); success(en, note);
+  return en;
+}
+
+function removeEntry(en){
+  const i = S.log.indexOf(en); if(i<0) return;
+  S.log.splice(i,1);
+  if(en.advanced && S.periodIdx===en.periodIdx+1) S.periodIdx = en.periodIdx;
+  renumber(); save();
+}
+function undo(){
+  dismissFollowup();
+  const en = S.log[S.log.length-1];
+  if(!en) return fail('취소할 기록이 없습니다');
+  removeEntry(en);
+  resetSel(false); renderAll();
+  buzz(true); toast(`↩ #${en.no} ${esc(teamName(en.team))} · ${esc(en.event)} 취소`, 'ok');
+}
+
+/* ===== 파울 → 상대팀 세트피스 ===== */
+function startFollowup(foulTeam, zone, options){
+  fu = {team:opp(foulTeam), zone, options};
+  renderBanners();
+}
+function resolveFollowup(i){
+  if(!fu) return;
+  const o = fu.options[i], f = fu; fu = null; renderBanners();
+  if(o){ record(f.team, evDef(o.id), f.zone); }
+}
+function dismissFollowup(){ if(fu){ fu=null; renderBanners(); } }
+
+/* =====================================================================
+   렌더링
+   ===================================================================== */
+function renderPicker(){
+  $('#sportGrid').innerHTML = Object.values(SPORTS).map(sp=>
+    `<button class="sport-card" data-sport="${sp.id}" style="background:${sp.field}"><span class="em">${sp.emoji}</span><span><b>${sp.name}</b><small>${sp.desc}</small></span></button>`
+  ).join('');
+  const box = $('#resumeBox');
+  if(S.sport){
+    const sp = SP();
+    box.innerHTML = `<div class="resume"><div><b>${sp.emoji} ${sp.name} 경기 진행 중</b><small>${esc(S.home)} vs ${esc(S.away)} · 기록 ${S.log.length}건</small></div><button class="btn-accent" id="resumeBtn">이어서 하기</button></div>`;
+  } else box.innerHTML = '';
+}
+
+function buildSport(){
+  const sp = SP(), map = getMap(sp.id);
+  $('#sportTitle').textContent = `${sp.emoji} ${sp.name}`;
+  $('#zoneCard').style.setProperty('--field', sp.field);
+  // 지도
+  const svg = $('#mapSvg');
+  svg.setAttribute('viewBox', map.viewBox);
+  svg.classList.toggle('portrait', !!map.portrait);
+  const zonesSvg = map.zones.map(z=>
+    `<path class="zone${z.out?' out':''}" data-z="${z.id}" d="${z.d}"${z.eo?' fill-rule="evenodd"':''}${z.clip?` clip-path="url(#${z.clip})"`:''}/>`
+  ).join('');
+  const labels = map.zones.map(z=>{
+    const fs = z.fs || 30;
+    let s = `<text class="zlab" data-zl="${z.id}" x="${f2(z.cx)}" y="${f2(z.nosub ? z.cy+fs*0.35 : z.cy+fs*0.06)}" font-size="${fs}">${z.id}</text>`;
+    if(!z.nosub) s += `<text class="zsub" data-zl="${z.id}" x="${f2(z.cx)}" y="${f2(z.cy+fs*0.7)}" font-size="${f2(fs*0.5)}">${esc(z.label)}</text>`;
+    return s;
+  }).join('');
+  svg.innerHTML = map.defs + map.bg + zonesSvg + `<g class="art" style="pointer-events:none">${map.art}</g>` + labels;
+  $('#mapHint').textContent = sp.mapHint;
+  // 이벤트 버튼
+  const groups = [];
+  sp.events.filter(e=>!e.hidden).forEach(e=>{
+    const g = e.group || '';
+    let G = groups.find(x=>x.name===g);
+    if(!G){ G = {name:g, items:[]}; groups.push(G); }
+    G.items.push(e);
+  });
+  $('#evBox').innerHTML = groups.map(g=>
+    `<div class="ev-group">${g.name ? `<h3 class="ev-group-title">${g.name}</h3>` : ''}<div class="ev-grid">` +
+    g.items.map(e=>`<button class="ev${e.tone?' tone-'+e.tone:''}" data-ev="${e.id}">${e.loc?'<i class="pin"></i>':''}<span>${e.label}</span>${e.keys?`<span class="k">${e.keys}</span>`:''}</button>`).join('') +
+    `</div></div>`).join('');
+  // 타이머 영역
+  $('#tbtns').hidden = !sp.timer;
+  // HUD 범례
+  $('#hudLegend').innerHTML = sp.events.filter(e=>e.keys).map(e=>`<span><b>${e.keys}</b> ${e.label}</span>`).join('') +
+    '<span><b>Enter</b> 기록</span><span><b>Esc</b> 취소</span><span><b>Ctrl+Z</b> 되돌리기</span>';
+  renderGuide();
+}
+
+function renderGuide(){
+  const sp = SP();
+  const common = `
+    <h3>기본 순서</h3>
+    <ol>
+      <li><b>팀 선택</b> — 점수판의 홈·어웨이를 누르세요. 노트북은 <kbd>←</kbd> <kbd>→</kbd>.</li>
+      <li><b>이벤트 선택</b> — 버튼을 누르세요. 노트북은 버튼에 적힌 키를 누르세요.</li>
+      <li><b>위치 선택</b> — 점이 있는 이벤트는 위치 지도가 열리고, 구역을 누르면 바로 저장됩니다.</li>
+      <li>잘못 눌렀다면 <b>↩ 취소</b>(<kbd>Ctrl</kbd>+<kbd>Z</kbd>)를 누르거나, 로그의 행을 눌러 수정·삭제하세요.</li>
+      <li>경기가 끝나면 <b>CSV</b> 또는 <b>JSON</b>으로 저장하세요.</li>
+    </ol>
+    <h3>노트북에서 위치를 먼저 누르기</h3>
+    <ul>
+      <li>팀을 고른 뒤 지도를 먼저 눌러도 됩니다. 이어서 이벤트를 누르면 저장되고, 그 위치에서 기록할 수 없는 이벤트는 회색으로 바뀝니다. 8초 안에 이벤트를 누르지 않으면 위치 선택이 풀립니다.</li>
+      <li>키보드는 숫자키와 이벤트 키를 어느 순서로 눌러도 되며 <kbd>Enter</kbd>로 저장합니다.</li>
+    </ul>
+    <h3>위치 0</h3>
+    <ul><li>위치가 필요 없는 이벤트는 위치 <b>0</b>(없음)으로 저장됩니다. 구역별 집계나 히트맵에서는 위치 0을 빼고 사용하세요.</li></ul>`;
+  const rules = {
+    soccer:`<h3>축구 규칙</h3><ul>
+      <li>득점을 기록하면 해당 팀 점수가 +1 됩니다.</li>
+      <li>파울을 기록하면 상대팀 프리킥·페널티킥 선택 배너가 나타납니다. 노트북은 <kbd>1</kbd> 프리킥 · <kbd>2</kbd> 페널티킥 · <kbd>Esc</kbd> 건너뛰기.</li>
+      <li>기본 설정에서는 타이머가 실행 중일 때만 기록됩니다. 설정에서 바꿀 수 있습니다.</li></ul>`,
+    baseball:`<h3>야구 규칙</h3><ul>
+      <li>초는 어웨이, 말은 홈이 공격합니다. 공격 팀이 자동으로 선택됩니다.</li>
+      <li>땅볼·뜬공·삼진·아웃은 아웃카운트가 +1 되고, 3아웃이 되면 자동으로 공수교대합니다. 설정에서 땅볼·뜬공·삼진의 자동 아웃을 끌 수 있습니다.</li>
+      <li>점수는 득점 이벤트로 +1 됩니다. 홈런은 득점을 따로 기록하세요.</li>
+      <li>야구는 시계가 없어 이닝과 기록 시각이 저장됩니다.</li></ul>`,
+    basketball:`<h3>농구 규칙</h3><ul>
+      <li>2점·3점·자유투 성공 시 점수가 +2·+3·+1 됩니다.</li>
+      <li>2점은 3점 라인 안쪽 구역(1~5), 3점은 바깥 구역(6~10)만 선택할 수 있습니다. 10번 구역은 숫자 <kbd>0</kbd> 키입니다.</li>
+      <li>파울은 후속 선택 없이 기록만 합니다.</li></ul>`,
+    volleyball:`<h3>배구 규칙</h3><ul>
+      <li>서브 득점·득점은 해당 팀 +1, 서브 실패·실점은 상대팀 +1 입니다.</li>
+      <li>서브와 스파이크의 위치는 <b>상대 코트의 낙구 위치</b>입니다. 공격팀의 시점으로 네트가 아래쪽이며, 1~3은 전위(좌·중·우), 4~6은 후위(좌·중·우), 7은 코트 밖(아웃), 8은 네트입니다.</li>
+      <li>서브 득점·서브 인플레이는 코트 안(1~6), 서브 실패는 아웃·네트(7·8)만 선택할 수 있습니다.</li>
+      <li>점수는 세트별로 집계됩니다. 25점(5세트는 15점) 이상에서 2점 차가 되면 안내 배너가 나타납니다.</li>
+      <li>배구는 시계가 없어 세트와 기록 시각이 저장됩니다.</li></ul>`
+  };
+  $('#guideBody').innerHTML = common + rules[sp.id];
+  $('#guide').open = S.log.length===0;
+}
+
+function renderBoard(){
+  const sp = SP();
+  ['home','away'].forEach(t=>{
+    const b = $(`.tm.${t}`);
+    b.querySelector('.tm-name').textContent = teamName(t);
+    b.querySelector('.tm-score').textContent = scoreOf(t);
+    b.querySelector('.tm-sub').textContent = sp.innings ? (t===battingTeam() ? '공격' : '') : (sp.perPeriod ? `세트 ${setsWon(t)}` : '');
+    b.classList.toggle('sel', sel.team===t);
+  });
+  const clock = $('#clock'), status = $('#status');
+  clock.classList.toggle('txt', !sp.timer);
+  if(sp.timer){
+    clock.textContent = fmt(Math.floor(elapsedMs()/1000));
+    status.textContent = `${periodLabel(S.periodIdx)} · ${S.running ? '진행 중' : '정지'}`;
+  } else if(sp.innings){
+    const o = Math.min(outsIn(S.periodIdx),3);
+    clock.textContent = periodLabel(S.periodIdx);
+    status.innerHTML = `${o}아웃<span class="outs">${[0,1,2].map(i=>`<i class="${i<o?'on':''}"></i>`).join('')}</span>`;
+  } else {
+    clock.textContent = periodLabel(S.periodIdx);
+    status.textContent = `세트 ${setsWon('home')} : ${setsWon('away')}`;
+  }
+  // 구간 선택
+  const per = $('#periods');
+  if(sp.innings){
+    per.innerHTML = `<button data-pdir="-1">‹ 이전 이닝</button><button data-pdir="1">다음 이닝 ›</button>`;
+  } else {
+    per.innerHTML = sp.periods.map((p,i)=>`<button data-p="${i}" class="${i===S.periodIdx?'active':''}">${p}</button>`).join('');
+  }
+  $('#startBtn').disabled = S.running;
+  $('#stopBtn').disabled = !S.running;
+}
+
+function renderBanners(){
+  const fuEl = $('#followup');
+  if(fu){
+    fuEl.hidden = false;
+    $('#fuText').textContent = `${teamName(fu.team)} 세트피스 · 어떤 걸로 기록할까요?`;
+    $('#fuBtns').innerHTML = fu.options.map((o,i)=>`<button data-fu="${i}"><kbd>${o.key}</kbd>${o.label}</button>`).join('') +
+      `<button class="skip" data-fu="skip"><kbd>Esc</kbd>건너뛰기</button>`;
+  } else fuEl.hidden = true;
+
+  const sb = $('#setBanner'), sp = SP();
+  if(sp.perPeriod){
+    const w = setEnded(S.periodIdx);
+    if(w){
+      const h=scoreOf('home'), a=scoreOf('away');
+      const last = S.periodIdx>=sp.periods.length-1;
+      sb.hidden = false;
+      sb.innerHTML = `<div>${periodLabel(S.periodIdx)} 종료 조건 충족<small>${esc(S.home)} ${h} : ${a} ${esc(S.away)}</small></div>` +
+        (last ? '' : `<button class="btn-accent" data-nextset="1">${periodLabel(S.periodIdx+1)} 시작</button>`);
+    } else sb.hidden = true;
+  } else sb.hidden = true;
+}
+
+function renderSel(){
+  const sp = SP(), def = sel.evId ? evDef(sel.evId) : null;
+  // 팀 선택 표시
+  ['home','away'].forEach(t=> $(`.tm.${t}`).classList.toggle('sel', sel.team===t));
+  const card = $('#evCard');
+  card.classList.toggle('home', sel.team==='home');
+  card.classList.toggle('away', sel.team==='away');
+  document.querySelectorAll('.ev').forEach(b=>{
+    const d = evDef(b.dataset.ev);
+    b.classList.toggle('pending', !!def && d.id===def.id);
+    b.classList.toggle('off', !!(sel.zone && !sel.evId && d.loc && d.allow && !d.allow.includes(sel.zone)));
+  });
+  // HUD
+  const ht = $('#hudTeam'); ht.className = 'hud-step' + (sel.team ? ' filled '+sel.team : '');
+  $('#hudTeamV').textContent = sel.team ? teamName(sel.team) : '-';
+  const he = $('#hudEvent'); he.className = 'hud-step' + (def ? ' filled' : '');
+  $('#hudEventV').textContent = def ? def.label : '-';
+  const hz = $('#hudZone'); hz.className = 'hud-step' + (sel.zone ? ' filled' : '');
+  $('#hudZoneV').textContent = sel.zone ? zoneText(sel.zone) : (def && !def.loc ? '0 (없음)' : '-');
+  // 지도
+  const awaiting = awaitingZone();
+  const zc = $('#zoneCard');
+  const zoneFirst = !!sel.zone && !sel.evId;
+  zc.classList.toggle('awaiting', awaiting);
+  zc.classList.toggle('zfirst', zoneFirst);
+  $('#zoneBackdrop').classList.toggle('show', awaiting);
+  $('#zoneCancel').hidden = !(awaiting || zoneFirst);
+  $('#zoneTitle').textContent = awaiting ? `${def.label} · 위치를 선택하세요`
+    : (zoneFirst ? `위치 ${zoneText(sel.zone)} · 이벤트를 선택하세요` : '위치 지도');
+  document.querySelectorAll('.zone').forEach(el=>{
+    const id = +el.dataset.z;
+    el.classList.toggle('selected', sel.zone===id);
+    el.classList.toggle('off', !!(awaiting && def.allow && !def.allow.includes(id)));
+  });
+  document.querySelectorAll('[data-zl]').forEach(el=> el.classList.toggle('selected', sel.zone===+el.dataset.zl));
+}
+
+function renderLog(){
+  $('#logCount').textContent = S.log.length;
+  const body = $('#logBody');
+  if(!S.log.length){ body.innerHTML = `<tr class="empty-row"><td colspan="6">아직 기록된 이벤트가 없습니다</td></tr>`; return; }
+  body.innerHTML = S.log.slice().reverse().map(e=>
+    `<tr class="log-row" data-no="${e.no}"><td>${e.no}</td><td><span class="team-tag ${e.team}">${esc(teamName(e.team))}</span></td><td>${esc(e.event)}</td><td>${esc(zoneText(e.zone))}</td><td>${esc(e.period)}</td><td>${fmt(e.sec)}</td></tr>`
+  ).join('');
+}
+
+function renderDock(){
+  const last = S.log[S.log.length-1];
+  $('#dockLast').innerHTML = last
+    ? `<b>#${last.no} ${esc(teamName(last.team))} · ${esc(last.event)}${last.zone?' · '+last.zone:''}</b><span>${esc(last.period)}${last.sec!=null?' '+fmt(last.sec):''}</span>`
+    : `<span>아직 기록이 없습니다</span>`;
+  $('#dockUndo').disabled = !last;
+  $('#undoBtn').disabled = !last;
+}
+
+function renderAll(){
+  renderBoard(); renderBanners(); renderSel(); renderLog(); renderDock();
+}
+
+/* =====================================================================
+   로그 수정 · 삭제
+   ===================================================================== */
+function openEdit(no){
+  const en = S.log.find(x=>x.no===no); if(!en) return;
+  const sp = SP(), map = getMap(sp.id);
+  let team = en.team;
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div class="field"><label class="l">팀</label><div class="seg" id="eTeam">
+      <button class="home" data-t="home">${esc(teamName('home'))}</button><button class="away" data-t="away">${esc(teamName('away'))}</button></div></div>
+    <div class="field"><label class="l">이벤트</label><select id="eEv">${sp.events.map(e=>`<option value="${e.id}"${e.id===en.eid?' selected':''}>${e.label}</option>`).join('')}</select></div>
+    <div class="field"><label class="l">위치</label><select id="eZone"><option value="0"${!en.zone?' selected':''}>없음 (0)</option>${map.zones.map(z=>`<option value="${z.id}"${z.id===en.zone?' selected':''}>${z.id} ${z.label}</option>`).join('')}</select></div>
+    ${sp.timer ? `<div class="field"><label class="l">경기 시간 (분:초)</label><input type="text" id="eTime" value="${fmt(en.sec)}" inputmode="numeric"></div>` : ''}
+    ${!sp.innings ? `<div class="field"><label class="l">구간</label><select id="ePer">${sp.periods.map((p,i)=>`<option value="${i}"${i===en.periodIdx?' selected':''}>${p}</option>`).join('')}</select></div>` : ''}`;
+  const paint = ()=> body.querySelectorAll('#eTeam button').forEach(b=> b.classList.toggle('on', b.dataset.t===team));
+  body.querySelector('#eTeam').addEventListener('click', e=>{ const b=e.target.closest('button'); if(b){ team=b.dataset.t; paint(); } });
+  paint();
+  let delArmed = false;
+  showModal({title:`#${en.no} 기록 수정`, body, buttons:[
+    {text:'삭제', cls:'m-left', close:false, onClick:()=>{
+      const btn = $('#mActions .m-left');
+      if(!delArmed){ delArmed = true; btn.textContent = '정말 삭제'; return false; }
+      removeEntry(en); resetSel(false); renderAll(); toast('기록을 삭제했습니다','ok');
+    }},
+    {text:'취소', cls:'m-cancel'},
+    {text:'저장', cls:'m-ok', onClick:()=>{
+      const def = evDef($('#eEv').value);
+      const z = +$('#eZone').value;
+      if(def.loc && !z){ toast('이 이벤트는 위치가 필요합니다','err'); return false; }
+      if(def.allow && z && !def.allow.includes(z)){ toast('이 이벤트에서 선택할 수 없는 구역입니다','err'); return false; }
+      if(sp.timer){
+        const m = $('#eTime').value.trim().match(/^(\d+):([0-5]?\d)$/);
+        if(!m){ toast('시간은 분:초 형식으로 입력하세요 (예: 12:30)','err'); return false; }
+        en.sec = (+m[1])*60 + (+m[2]);
+      }
+      if(!sp.innings){ en.periodIdx = +$('#ePer').value; en.period = periodLabel(en.periodIdx); }
+      en.team = team; en.eid = def.id; en.zone = def.loc ? z : 0;
+      derive(en); save(); renderAll(); toast('수정했습니다','ok');
+    }}
+  ]});
+}
+
+/* =====================================================================
+   설정
+   ===================================================================== */
+function openSettings(first){
+  const sp = SP();
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div class="field"><label class="l">홈 팀 이름 (← 키)</label><input type="text" id="sHome" maxlength="20" value="${esc(S.home)}"></div>
+    <div class="field"><label class="l">어웨이 팀 이름 (→ 키)</label><input type="text" id="sAway" maxlength="20" value="${esc(S.away)}"></div>
+    <label class="sw"><span>진동 피드백<small>기록될 때 짧게 진동합니다. (지원하는 기기만)</small></span><input type="checkbox" id="sVib" ${S.settings.vibrate?'checked':''}></label>
+    <label class="sw"><span>화면 꺼짐 방지<small>태깅하는 동안 화면이 꺼지지 않습니다.</small></span><input type="checkbox" id="sWake" ${S.settings.wake?'checked':''}></label>
+    <label class="sw"><span>기록 후 팀 선택 유지<small>같은 팀을 연속으로 기록할 때 편합니다.</small></span><input type="checkbox" id="sKeep" ${S.settings.keepTeam?'checked':''}></label>
+    ${sp.timer ? `<label class="sw"><span>타이머 실행 중에만 기록<small>끄면 타이머가 멈춰 있어도 기록됩니다.</small></span><input type="checkbox" id="sReq" ${S.settings.requireRunning?'checked':''}></label>` : ''}
+    ${sp.id==='baseball' ? `<label class="sw"><span>땅볼·뜬공·삼진을 아웃으로 자동 집계<small>끄면 아웃 이벤트만 아웃카운트에 반영됩니다.</small></span><input type="checkbox" id="sOut" ${S.settings.autoOut?'checked':''}></label>` : ''}`;
+  showModal({title: first ? '경기 설정' : '설정', body, buttons:[{text: first ? '시작' : '닫기', cls:'m-ok'}]});
+  const bind = (id, fn)=>{ const el = body.querySelector(id); if(el) el.addEventListener('input', fn); };
+  bind('#sHome', e=>{ S.home = e.target.value.trim(); save(); renderBoard(); renderLog(); renderDock(); renderSel(); });
+  bind('#sAway', e=>{ S.away = e.target.value.trim(); save(); renderBoard(); renderLog(); renderDock(); renderSel(); });
+  bind('#sVib',  e=>{ S.settings.vibrate = e.target.checked; save(); if(e.target.checked) buzz(true); });
+  bind('#sWake', e=>{ S.settings.wake = e.target.checked; save(); e.target.checked ? acquireWake() : releaseWake(); });
+  bind('#sKeep', e=>{ S.settings.keepTeam = e.target.checked; save(); });
+  bind('#sReq',  e=>{ S.settings.requireRunning = e.target.checked; save(); });
+  bind('#sOut',  e=>{ S.settings.autoOut = e.target.checked; S.log.forEach(derive); save(); renderAll(); });
+}
+
+/* =====================================================================
+   내보내기
+   ===================================================================== */
+function fileBase(){
+  const d = new Date();
+  const t = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+  return `${SP().name}_${teamName('home')}_vs_${teamName('away')}_${t}`.replace(/[\\/:*?"<>|\s]+/g,'_');
+}
+function download(name, mime, text){
+  const url = URL.createObjectURL(new Blob([text], {type:mime}));
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 800);
+}
+function exportCsv(){
+  if(!S.log.length) return fail('저장할 기록이 없습니다');
+  const q = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const head = ['번호','종목','홈어웨이','팀','이벤트','위치','위치명','구간','경기시간','기록시각'];
+  const rows = S.log.map(e=>[e.no, SP().name, e.team==='home'?'홈':'어웨이', teamName(e.team), e.event, e.zone, e.zoneName||'없음', e.period, e.sec==null?'':fmt(e.sec), e.at]);
+  download(fileBase()+'.csv', 'text/csv;charset=utf-8', '\ufeff' + [head, ...rows].map(r=>r.map(q).join(',')).join('\r\n'));
+  toast('CSV로 저장했습니다','ok');
+}
+function exportJson(){
+  if(!S.log.length) return fail('저장할 기록이 없습니다');
+  const sp = SP();
+  const data = {
+    app:'multi-sport-tagger', version:1, sport:sp.id, sportName:sp.name,
+    teams:{home:teamName('home'), away:teamName('away')},
+    exportedAt:stamp(),
+    events:S.log.map(e=>({
+      no:e.no, sport:sp.id, side:e.team, team:teamName(e.team), event:e.event, eventId:e.eid,
+      zone:e.zone, zoneName:e.zoneName||'없음', period:e.period, periodIdx:e.periodIdx,
+      time:e.sec==null?null:fmt(e.sec), timeSec:e.sec, recordedAt:e.at,
+      scoreTo:e.scoreTo, points:e.pts, outs:e.outs
+    }))
+  };
+  download(fileBase()+'.json', 'application/json', JSON.stringify(data,null,2));
+  toast('JSON으로 저장했습니다','ok');
+}
+
+/* =====================================================================
+   화면 전환
+   ===================================================================== */
+function showScreen(name){
+  $('#picker').hidden = name!=='picker';
+  $('#tagger').hidden = name!=='tagger';
+  S.inGame = name==='tagger';
+  save(); window.scrollTo(0,0);
+}
+function enterTagger(){
+  buildSport(); resetSel(false);
+  showScreen('tagger'); renderAll(); acquireWake();
+}
+function leaveTagger(){
+  dismissFollowup(); resetSel(false);
+  showScreen('picker'); renderPicker();
+}
+async function chooseSport(id){
+  if(S.sport && S.log.length){
+    const ok = await confirmModal(`진행 중인 ${SP().name} 기록 ${S.log.length}건이 있습니다.\n새 경기를 시작하면 이 기록이 삭제됩니다. 계속할까요?`, '삭제하고 시작', true);
+    if(!ok) return;
+  }
+  newGame(id); save();
+  enterTagger(); openSettings(true);
+}
+
+/* =====================================================================
+   이벤트 연결
+   ===================================================================== */
+$('#sportGrid').addEventListener('click', e=>{ const b=e.target.closest('.sport-card'); if(b) chooseSport(b.dataset.sport); });
+$('#resumeBox').addEventListener('click', e=>{ if(e.target.closest('#resumeBtn')) enterTagger(); });
+$('#backBtn').addEventListener('click', leaveTagger);
+$('#settingsBtn').addEventListener('click', ()=>openSettings(false));
+$('#startBtn').addEventListener('click', startTimer);
+$('#stopBtn').addEventListener('click', stopTimer);
+$('#undoBtn').addEventListener('click', undo);
+$('#dockUndo').addEventListener('click', undo);
+$('#dockLog').addEventListener('click', ()=>$('#logCard').scrollIntoView({behavior:'smooth', block:'start'}));
+$('#csvBtn').addEventListener('click', exportCsv);
+$('#jsonBtn').addEventListener('click', exportJson);
+$('#resetBtn').addEventListener('click', async ()=>{
+  if(!S.log.length && !S.elapsed && !S.periodIdx) return fail('초기화할 기록이 없습니다');
+  const ok = await confirmModal(`기록 ${S.log.length}건과 타이머·구간을 모두 초기화합니다. 계속할까요?\n(먼저 CSV/JSON으로 저장해 두세요.)`, '초기화', true);
+  if(!ok) return;
+  S.log=[]; S.periodIdx=0; S.elapsed=0; S.running=false; S.startTime=0; S.elapsedBy={};
+  dismissFollowup(); resetSel(false); save(); renderAll(); renderGuide();
+});
+document.querySelectorAll('.tm').forEach(b=> b.addEventListener('click', ()=>{ selectTeam(b.dataset.team); b.blur(); }));
+$('#periods').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  if(b.dataset.pdir) setPeriod(S.periodIdx + (+b.dataset.pdir));
+  else setPeriod(+b.dataset.p);
+  b.blur();
+});
+$('#evBox').addEventListener('click', e=>{ const b=e.target.closest('.ev'); if(b){ pickEvent(b.dataset.ev); b.blur(); } });
+$('#mapSvg').addEventListener('click', e=>{ const z=e.target.closest('.zone'); if(z) pickZone(+z.dataset.z); });
+$('#zoneCancel').addEventListener('click', ()=>{ if(awaitingZone()) resetSel(true); else { sel.zone = null; renderSel(); } });
+$('#zoneBackdrop').addEventListener('click', ()=>resetSel(true));
+$('#followup').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  resolveFollowup(b.dataset.fu==='skip' ? -1 : +b.dataset.fu);
+});
+$('#setBanner').addEventListener('click', e=>{ if(e.target.closest('[data-nextset]')) setPeriod(S.periodIdx+1); });
+$('#logBody').addEventListener('click', e=>{ const r=e.target.closest('.log-row'); if(r) openEdit(+r.dataset.no); });
+
+/* ===== 키보드 (노트북) ===== */
+document.addEventListener('keydown', e=>{
+  if(!S.inGame) return;
+  if(isModalOpen()){ if(e.key==='Escape') modalEl.classList.remove('show'); return; }
+  const t = e.target;
+  if(t && (t.tagName==='INPUT' || t.tagName==='SELECT' || t.tagName==='TEXTAREA')) return;
+  const key = e.key, sp = SP();
+  if((e.ctrlKey||e.metaKey) && key.toLowerCase()==='z'){ e.preventDefault(); undo(); return; }
+  if(e.ctrlKey || e.metaKey || e.altKey) return;
+
+  if(fu){
+    const i = fu.options.findIndex(o=>o.key===key);
+    if(i>=0){ e.preventDefault(); resolveFollowup(i); return; }
+    if(key==='Escape'){ e.preventDefault(); resolveFollowup(-1); return; }
+    if(key==='ArrowLeft' || key==='ArrowRight') dismissFollowup();
+    else return;
+  }
+  if(key==='ArrowLeft'){ e.preventDefault(); selectTeam('home'); return; }
+  if(key==='ArrowRight'){ e.preventDefault(); selectTeam('away'); return; }
+  if(key==='Escape'){ e.preventDefault(); resetSel(false); return; }
+  if(!sel.team) return;
+
+  // 이벤트 키와 위치 숫자키는 어느 순서로 눌러도 됩니다. 같은 키를 반복하면 d → dd → ddd 로 이어집니다.
+  if(key.length===1 && /[a-z]/i.test(key)){
+    const k = key.toLowerCase();
+    const cand = sp.events.find(ev=>ev.keys===sel.buf+k) || sp.events.find(ev=>ev.keys===k);
+    if(cand){
+      e.preventDefault();
+      if(sel.zone && cand.loc && cand.allow && !cand.allow.includes(sel.zone)) return fail(`${cand.label}은(는) ${zoneText(sel.zone)} 구역에서 기록할 수 없습니다`);
+      sel.buf = cand.keys; sel.evId = cand.id; renderSel();
+    }
+    return;
+  }
+  if(key==='Backspace'){ e.preventDefault(); if(sel.evId){ sel.buf=''; sel.evId=null; } else sel.zone=null; renderSel(); return; }
+
+  if(/^[0-9]$/.test(key)){
+    e.preventDefault();
+    const def = sel.evId ? evDef(sel.evId) : null;
+    if(!def && isMobile()) return;
+    if(def && !def.loc) return fail(`${def.label}은(는) 위치를 기록하지 않습니다`);
+    const z = zoneByKey(key);
+    if(!z) return fail('없는 구역입니다');
+    if(def && def.allow && !def.allow.includes(z.id)) return fail(`${def.label}은(는) 선택할 수 없는 구역입니다`);
+    sel.zone = z.id; if(!def) scheduleZoneExpiry(); renderSel(); return;
+  }
+  if(key==='Enter'){ e.preventDefault(); commit(); return; }
+});
+
+/* =====================================================================
+   시작
+   ===================================================================== */
+load();
+renderPicker();
+if(S.sport && S.inGame){
+  buildSport(); resetSel(false);
+  $('#picker').hidden = true; $('#tagger').hidden = false;
+  renderAll(); acquireWake();
+}
+tickId = setInterval(updateClock, 250);
+window.addEventListener('pagehide', save);
+
+// 테스트용 훅 (화면에는 영향 없음)
+window.__tagger = {S:()=>S, sel:()=>sel, SPORTS, chooseSport, pickEvent, pickZone, selectTeam, undo, startTimer, record, getMap};
+})();
+</script>
+</body>
+</html>
